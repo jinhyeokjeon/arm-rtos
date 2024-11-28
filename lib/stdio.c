@@ -81,7 +81,7 @@ uint32_t utoa(char* buf, uint32_t val, utoa_t base) {
   do {
     uint32_t t = val % (uint32_t)base;
     if (t >= 10) {
-      t = 'A' + t - 10 - '0';
+      t += 'A' - 10 - '0';
     }
     tmp[idx] = '0' + t;
     val /= base;
