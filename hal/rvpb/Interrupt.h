@@ -1,17 +1,14 @@
 #ifndef HAL_RVPB_INTERRUPT_H_
 #define HAL_RVPB_INTERRUPT_H_
 
-typedef union CpuControl_t
-{
+typedef union CpuControl_t {
   uint32_t all;
   struct {
     uint32_t Enable : 1;          // 0
     uint32_t reserved : 31;
   } bits;
 } CpuControl_t;
-
-typedef union PriorityMask_t
-{
+typedef union PriorityMask_t {
   uint32_t all;
   struct {
     uint32_t Reserved : 4;        // 3:0
@@ -19,18 +16,14 @@ typedef union PriorityMask_t
     uint32_t reserved : 24;
   } bits;
 } PriorityMask_t;
-
-typedef union BinaryPoint_t
-{
+typedef union BinaryPoint_t {
   uint32_t all;
   struct {
     uint32_t Binarypoint : 3;     // 2:0
     uint32_t reserved : 29;
   } bits;
 } BinaryPoint_t;
-
-typedef union InterruptAck_t
-{
+typedef union InterruptAck_t {
   uint32_t all;
   struct {
     uint32_t InterruptID : 10;    // 9:0
@@ -38,9 +31,7 @@ typedef union InterruptAck_t
     uint32_t reserved : 19;
   } bits;
 } InterruptAck_t;
-
-typedef union EndOfInterrupt_t
-{
+typedef union EndOfInterrupt_t {
   uint32_t all;
   struct {
     uint32_t InterruptID : 10;    // 9:0
@@ -48,9 +39,7 @@ typedef union EndOfInterrupt_t
     uint32_t reserved : 19;
   } bits;
 } EndOfInterrupt_t;
-
-typedef union RunningInterrupt_t
-{
+typedef union RunningInterrupt_t {
   uint32_t all;
   struct {
     uint32_t Reserved : 4;        // 3:0
@@ -58,9 +47,7 @@ typedef union RunningInterrupt_t
     uint32_t reserved : 24;
   } bits;
 } RunningInterrupt_t;
-
-typedef union HighestPendInter_t
-{
+typedef union HighestPendInter_t {
   uint32_t all;
   struct {
     uint32_t InterruptID : 10;    // 9:0
@@ -68,18 +55,14 @@ typedef union HighestPendInter_t
     uint32_t reserved : 19;
   } bits;
 } HighestPendInter_t;
-
-typedef union DistributorCtrl_t
-{
+typedef union DistributorCtrl_t {
   uint32_t all;
   struct {
     uint32_t Enable : 1;          // 0
     uint32_t reserved : 31;
   } bits;
 } DistributorCtrl_t;
-
-typedef union ControllerType_t
-{
+typedef union ControllerType_t {
   uint32_t all;
   struct {
     uint32_t IDlinesnumber : 5;   // 4:0
@@ -88,10 +71,7 @@ typedef union ControllerType_t
   } bits;
 } ControllerType_t;
 
-
-
-typedef struct GicCput_t
-{
+typedef struct GicCput_t {
   CpuControl_t       cpucontrol;        //0x000
   PriorityMask_t     prioritymask;      //0x004
   BinaryPoint_t      binarypoint;       //0x008
@@ -100,9 +80,7 @@ typedef struct GicCput_t
   RunningInterrupt_t runninginterrupt;  //0x014
   HighestPendInter_t highestpendinter;  //0x018
 } GicCput_t;
-
-typedef struct GicDist_t
-{
+typedef struct GicDist_t {
   DistributorCtrl_t   distributorctrl;    //0x000
   ControllerType_t    controllertype;     //0x004
   uint32_t            reserved0[62];      //0x008-0x0FC

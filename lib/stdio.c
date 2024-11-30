@@ -14,7 +14,6 @@ uint32_t putstr(const char* s) {
   }
   return c;
 }
-
 uint32_t debug_printf(const char* format, ...) {
   va_list args;
   va_start(args, format);
@@ -23,7 +22,6 @@ uint32_t debug_printf(const char* format, ...) {
 
   return putstr(printf_buf);
 }
-
 uint32_t vsprintf(char* buf, const char* format, va_list arg) {
   uint32_t c = 0;
 
@@ -72,7 +70,6 @@ uint32_t vsprintf(char* buf, const char* format, va_list arg) {
   buf[c] = '\0';
   return c;
 }
-
 uint32_t utoa(char* buf, uint32_t val, utoa_t base) {
   uint32_t c = 0;
   int32_t idx = 0;

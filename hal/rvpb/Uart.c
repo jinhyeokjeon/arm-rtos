@@ -21,12 +21,10 @@ void Hal_uart_init(void) {
   Hal_interrupt_enable(UART_INTERRUPT0);
   Hal_interrupt_register_handler(interrupt_handler, UART_INTERRUPT0);
 }
-
 void Hal_uart_put_char(uint8_t ch) {
   while (Uart->uartfr.bits.TXFF);
   Uart->uartdr.all = (ch & 0xFF);
 }
-
 uint8_t Hal_uart_get_char(void) {
   uint32_t data;
 
@@ -42,7 +40,6 @@ uint8_t Hal_uart_get_char(void) {
 
   return (uint8_t)(data & 0xFF);
 }
-
 static void interrupt_handler(void) {
   uint8_t ch = Hal_uart_get_char();
   Hal_uart_put_char(ch);
