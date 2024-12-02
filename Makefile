@@ -17,7 +17,8 @@ ASM_OBJS = $(patsubst boot/%.S, build/%.os, $(ASM_SRCS))
 # VPATH 는 소스 파일을 찾을 경로를 지정하는 변수.
 VPATH = boot \
         hal/$(TARGET) \
-				lib
+				lib \
+				kernel
 
 C_SRCS = $(notdir $(wildcard boot/*.c))
 C_SRCS += $(notdir $(wildcard hal/$(TARGET)/*c))

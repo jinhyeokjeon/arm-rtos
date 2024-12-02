@@ -23,6 +23,9 @@ typedef struct KernelTcb_t {
 typedef void (*KernelTaskFunc_t)(void);
 
 void Kernel_task_init(void);
+void Kernel_task_start(void);
 uint32_t Kernel_task_create(KernelTaskFunc_t startFunc);
+void Kernel_task_scheduler(void);
+void Kernel_task_context_switching(void);
 
 #endif
