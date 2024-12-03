@@ -3,6 +3,8 @@
 #include "HalUart.h"
 #include "HalInterrupt.h"
 
+#include "Kernel.h"
+
 extern volatile PL011_t* Uart; // 해당 변수가 외부에 정의되어 있다는 것을 선언
 
 static void interrupt_handler(void);
@@ -43,4 +45,10 @@ uint8_t Hal_uart_get_char(void) {
 static void interrupt_handler(void) {
   uint8_t ch = Hal_uart_get_char();
   Hal_uart_put_char(ch);
+
+  Kernel_send_events(KernelEventFlag_UartIn);
+
+  if (ch == 'X') {
+    Kernel_send_events(KernelEventFlag_CmdOut);
+  }
 }
