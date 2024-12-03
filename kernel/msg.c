@@ -2,7 +2,7 @@
 
 #include "msg.h"
 
-KernelCirQ_t sMsgQ[KernelMsgQ_Num];
+static KernelCirQ_t sMsgQ[KernelMsgQ_Num];
 
 void Kernel_msgQ_init(void) {
   for (uint32_t i = 0; i < KernelMsgQ_Num; ++i) {
