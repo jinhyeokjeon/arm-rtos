@@ -16,7 +16,7 @@ ASM_OBJS = $(patsubst boot/%.S, build/%.os, $(ASM_SRCS))
 C_SRCS = $(wildcard boot/*.c)
 C_OBJS = $(patsubst boot/%.c, build/%.o, $(C_SRCS))
 
-INC_DIRS = include
+INC_DIRS = -I include
 
 navilos = build/navilos.axf
 navilos_bin = build/navilos.bin
@@ -46,8 +46,8 @@ $(navilos): $(ASM_OBJS) $(C_OBJS) $(LINKER_SCRIPT)
 
 build/%.os: $(ASM_SRCS)
 	mkdir -p $(shell dirname $@)
-	$(CC) -marm -mcpu=$(MCPU) -I $(INC_DIRS) -c -g -o $@ $<
+	$(CC) -marm -mcpu=$(MCPU) $(INC_DIRS) -c -g -o $@ $<
 
 build/%.o: $(C_SRCS)
 	mkdir -p $(shell dirname $@)
-	$(CC) -marm -mcpu=$(MCPU) -I $(INC_DIRS) -c -g -o $@ $<
+	$(CC) -marm -mcpu=$(MCPU) $(INC_DIRS) -c -g -o $@ $<
