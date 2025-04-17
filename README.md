@@ -747,3 +747,122 @@ HalUart.h
 이렇게 여러 플랫폼을 지원 가능하게끔 디자인한다.
 
 #### 5.1.2 UART 공용 인터페이스 구현
+
+지금까지는 UART 공용 인터페이스 API를 설계하였고, 이제 해당 API를 만족하는 코드를 구현해야 한다.
+
+```c
+#include "stdint.h"
+#include "Uart.h"
+#include "HalUart.h"
+
+extern volatile PL011_t* Uart; // Uart 변수 extern으로 불러오기
+
+void Hal_uart_init(void) {
+  // UART 하드웨어 초기화
+  Uart->uartcr.bits.UARTEN = 0; // 하드웨어 끄기
+  Uart->uartcr.bits.TXE = 1; // 출력 켜기
+  Uart->uartcr.bits.RXE = 1; // 입력 켜기
+  Uart->uartcr.bits.UARTEN = 1; // 하드웨어 다시 켜기
+}
+
+void Hal_uart_put_char(uint8_t ch) {
+  while(Uart->uartfr.bits.TXFF); // UART 하드웨어의 출력 버퍼가 0이 될 때까지(출력 버퍼가 빌 때까지) 기다림
+  Uart->uartdr.bits.DATA = (ch & 0xFF); // 데이터 레지스터를 통해서 알파벳 한 글자를 출력 버퍼로 보냄
+}
+```
+
+실물 하드웨어를 초기화하려면 훨씬 복잡한 코드를 작성해야 하지만, QEMU는 생략하여도 UART가 동작한다.
+
+정상 작동한다면 Hal_uart_put_char 함수가 실행 완료되면, UART를 통해서 데이터가 호스트로 전송된다.
+
+```c
+#include "stdint.h"
+#include "HalUart.h"
+
+static void Hw_init(void);
+
+void main(void) {
+  Hw_init();
+
+  uint32_t i = 100;
+  while(i--) {
+    Hal_uart_put_char('N');
+  }
+}
+
+static void Hw_init(void){
+  Hal_uart_init();
+}
+```
+위 코드를 통해 UART 초기화가 제대로 되었고, 출력 코드가 정상인지 확인할 수 있다.
+
+이후 Makefile도 수정한다.
+
+```makefile
+ARCH = armv7-a
+MCPU = cortex-a8
+
+TARGET = rvpb // TARGET 추가
+
+CC = arm-none-eabi-gcc
+AS = arm-none-eabi-as
+LD = arm-none-eabi-ld
+OC = arm-none-eabi-objcopy
+OD = arm-none-eabi-objdump
+
+LINKER_SCRIPT = ./navilos.ld
+MAP_FILE = build/navilos.map
+
+ASM_SRCS = $(wildcard boot/*.S)
+ASM_OBJS = $(patsubst boot/%.S, build/%.os, $(ASM_SRCS))
+
+VPATH = boot \
+        hal/$(TARGET) // %.* 형식에서 VPATH에 추가된 디렉토리에서 %.* 파일을 찾는다.
+
+C_SRCS = $(notdir $(wildcard boot/*.c))
+C_SRCS += $(notdir $(wildcard hal/$(TARGET)/*.c))
+C_OBJS = $(patsubst %.c, build/%.o, $(C_SRCS))
+
+INC_DIRS = -I include \
+           -I hal     \
+					 -I hal/$(TARGET)
+
+CFLAGS = -c -g -std=c11
+
+navilos = build/navilos.axf
+navilos_bin = build/navilos.bin
+navilos_asm = build/navilos.S
+
+.PHONY: all clean run debug gdb
+
+all: $(navilos)
+
+clean:
+	@rm -rf build
+
+run: $(navilos)
+	qemu-system-arm -M realview-pb-a8 -kernel $(navilos) -nographic // -nographic 옵션을 추가하면 QEMU는 GUI를 출력하지 않고 시리얼 포트 입출력을 현재 호스트의 콘솔과 연결한다.
+
+debug: $(navilos)
+	qemu-system-arm -M realview-pb-a8 -kernel $(navilos) -S -gdb tcp::1234,ipv4
+
+gdb:
+	gdb-multiarch $(navilos)
+
+$(navilos): $(ASM_OBJS) $(C_OBJS) $(LINKER_SCRIPT)
+	$(LD) -n -T $(LINKER_SCRIPT) -nostdlib -o $(navilos) $(ASM_OBJS) $(C_OBJS) -Map=$(MAP_FILE)
+	$(OC) -O binary $(navilos) $(navilos_bin)
+	$(OD) -D -mcpu=$(MCPU) -marm -D -S $(navilos) > $(navilos_asm)
+
+build/%.os: %.S
+	mkdir -p $(shell dirname $@)
+	$(CC) -marm -mcpu=$(MCPU) $(INC_DIRS) -c -g -o $@ $<
+
+build/%.o: %.c
+	mkdir -p $(shell dirname $@)
+	$(CC) -marm -mcpu=$(MCPU) $(INC_DIRS) -c -g -o $@ $<
+```
+
+![alt text](./images/image_5.png)
+
+### 5.2 Hello, World!
