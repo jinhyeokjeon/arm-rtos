@@ -55,7 +55,7 @@ void main(void) {
 }
 
 void User_task0(void) {
-  debug_printf("User Task #0\n");
+  // debug_printf("User Task #0\n");
   while(true);
 }
 void User_task1(void) {

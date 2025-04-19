@@ -1879,7 +1879,6 @@ static void Timer_test(void) {
 typedef struct KernelTaskContext_t {
   uint32_t spsr;
   uint32_t r0_r12[13];
-  uint32_t lr;
   uint32_t pc;
 } KernelTaskContext_t;
 
@@ -1902,6 +1901,8 @@ KernelTcb_t에는 스택 관련 정보를 저장하고 있다. sp는 스택 포�
 
 태스크 컨텍스트는 결국 레지스터와 스택 포인터의 값이다. 스택 포인터도 레지스터의 일부이므로 태스크 컨텍스트를 전환한다는 것은 코어의 레지스터 값을 다른 태스크의 것으로 바꾼다는 말과 같다.
 
+> 각 태스크는 종료하지 않는다고 가정했으므로, lr 레지스터 값은 저장하지 않아도 된다.
+
 ### 8.2 태스크 컨트롤 블록 초기화
 
 이제 실제 메모리에 태스크 컨트롤 블록 인스턴스를 만들고 기본값을 할당하는 코드를 작성한다. kernel/task.c 파일에 코드를 작성한다.
@@ -1919,7 +1920,6 @@ void Kernel_task_init(void) {
 
     sTask_list[i].sp -= sizeof(KernelTaskContext_t);
     KernelTaskContext_t* ctx = (KernelTaskContext_t*)sTask_list[i].sp;
-    ctx->lr = 0;
     ctx->pc = 0;
     ctx->spsr = ARM_MODE_BIT_SYS;
   }
@@ -2043,3 +2043,147 @@ sCurrent_tcb_index에 현재 실행 중인 태스크의 태스크 컨텍스트 �
 스케줄러는 여러 알고리즘으로 구현할 수 있다. 스케줄러로 어떤 알고리즘을 쓰느냐에 따라 태스크 컨트롤 블록의 설계가 달라지기도 한다. 이 책에서는 이해하기 쉬운 코드를 만드는 것을 가장 중요한 목표로 하고 있으므로 가장 기본적인 라운드 로빈 스케줄러를 만들었다.
 
 다음 장에서는 컨텍스트 스위칭을 구현하여 멀티태스킹 커널을 만들어 본다.
+
+## 10. 컨텍스트 스위칭
+
+컨텍스트 스위칭이란 컨텍스트를 전환한다는 뜻이다. 태스크란 동작하는 프로그램이고, 동작하는 프로그램의 정보는 컨텍스트이다. 이 컨텍스트를 어딘가에 저장하고 또 다른 어딘가에서 컨텍스트를 가져다가 프로세서 코어에 복구하면 다른 프로그램이 동작한다. 바로 태스크가 바뀐 것이다.
+
+앞에서 태스크 컨텍스트를 스택에 저장했으므로, 컨텍스트 스위칭은 다음 과정으로 진행된다.
+
+1. 현재 동작하고 있는 태스크의 컨텍스트를 현재 스택에 백업한다.
+2. 다음에 동작할 태스크 컨트롤 블록을 스케줄러에서 받는다.
+3. 2에서 받은 태스크 컨트롤 블록에서 스택 포인터를 읽는다.
+4. 3에서 읽은 태스크의 스택에서 컨텍스트를 읽어서 ARM 코어에 복구한다.
+5. 다음에 동작할 태스크의 직전 프로그램 실행 위치로 이동한다. 이러면 이제 현재 동작하고 있는 태스크가 된다.
+
+```c
+static KernelTcb_t* sCurrent_tcb;
+static KernelTcb_t* sNext_tcb;
+
+void Kernel_task_scheduler(void) {
+  sCurrent_tcb = &sTask_list[sCurrent_tcb_index];
+  sNext_tcb = Scheduler_round_robin_algorithm();
+
+  Kernel_task_context_switching();
+}
+
+__attribute__ ((naked)) void Kernel_task_context_switching(void){
+  __asm__ ("B Save_context");
+  __asm__ ("B Restore_context");
+}
+```
+
+```__attribute__``` ((naked)) 는 GCC의 컴파일러 어트리뷰트 기능인데, 어트리뷰트를 naked라고 설정하면 컴파일러가 함수를 컴파일할 때 자동으로 만드는 스택 백업, 복구, 리턴 관련 어셈블리어가 전혀 생성되지 않고 내부에 코딩한 코드 자체만 그대로 남는다.
+
+```asm
+  // push {fp}
+  // add fp, sp, #0
+  b <Save_context>
+  b <Restore_context>
+  // sub sp, fp, #0
+  // pop {fp}
+  // bx lr
+```
+
+컨텍스트를 스택에 백업하고 스택에서 복구할 것이므로 컨텍스트 스위칭을 할 때 되도록 스택을 그대로 유지하는 것이 좋다. 그래서 위와 같은 방식을 사용하였다.
+
+또한 Save_context와 Restore_context에서 ARM 인스트럭션 B를 사용한 것 역시 LR을 변경하지 않기 위함이다.
+
+> lr은 함수 내부에서 다른 함수를 호출하는 부분이 있을 때만 함수 맨 처음에 스택에 push 한다.
+> lr에 다른 값이 덮어씌워질 일이 없기 때문이다.
+> 각 동작모드마다 lr은 뱅크드 레지스터로 설정되어 있기 때문에, 인터럽트가 발생된다 하더라도 lr은 덮어 씌워지지 않는다.
+
+![alt text](./images/image_13.jpeg)
+
+### 10.1 컨텍스트 백업하기
+
+앞에서 봤던 컨텍스트 자료 구조를 보자.
+```c
+typedef struct KernelTaskContext_t {
+  uint32_t spsr;
+  uint32_t r0_r12[13];
+  uint32_t pc;
+} KernelTaskContext_t;
+```
+spsr, r0_r12, pc 순서이다. C언어에서 구조체의 멤버 변수는 메모리 주소가 작은 값에서부터 큰 값으로 배정된다. 하지만 스택은 메모리 주소가 큰 값에서 작은 값으로 진행한다. 따라서 KernelTaskContext_t에 맞춰 컨텍스트를 스택에 백업할 때는 pc, r0_r12, spsr 순서로 백업해야 의도한 자료 구조 의미에 맞는 메모리 주소에 값이 저장된다.
+
+```c
+static __attribute__ ((naked)) void Save_context(void) {
+  // save current task context into the current task stack
+  __asm__ ("PUSH {lr}"); // Kerenl_task_context_switching을 호출한 함수에서의 PC + 4가 저장되어 있다.
+  __asm__ ("PUSH {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  // 왼쪽부터 낮은 주소로 들어간다. 즉 전부 삽입했을 때 맨 왼쪽이 저장된 위치가 스택 top이 된다.
+  __asm__ ("MRS r0, cpsr");
+  __asm__ ("PUSH {r0}");
+  // save current task stack pointer into the current TCB
+  __asm__ ("LDR r0, =sCurrent_tcb"); // sCurrent_tcb의 주소값이 r0에 저장
+  __asm__ ("LDR r0, [r0]"); // r0에 저장된 메모리 주소에서 값을 읽어서 r0에 저장 (sCurrent_tcb 값 저장됨)
+  __asm__ ("STMIA r0!, {sp}"); // r0에 저장된 값을 베이스 메모리 주소로 해서 SP를 저장
+}
+```
+아래 세 코드는 다음과 같이 표현할 수 있다.
+
+(uint32_t)(*sCurrent_tcb) = ARM_코어_SP_레지스터값;
+
+태스크 컨트롤 블록 자료 구조인 KernelTcb_t의 첫 번째 멤버 변수가 sp이므로 포인터 값을 읽어서 그대로 사용할 수 있다. (만약 두 번째라면 4바이트를 더해서 저장해야 했을 것이다.)
+
+### 10.2 컨텍스트 복구하기
+컨텍스트를 복구하는 작업은 컨텍스트를 백업하는 작업의 역순이다. 정확하게 반대로 동작하는 코드를 작성하면 된다.
+
+```c
+static __attribute__ ((naked)) void Restore_context(void) {
+  // restore next task stack pointer from the next TCB
+  __asm__ ("LDR r0, =sNext_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("LDMIA r0!, {sp});
+  // restore next task context from the next task stack
+  __asm__ ("POP {r0}");
+  __asm__ ("MSR cpsr, r0");
+  __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  __asm__ ("POP {pc}");
+}
+```
+
+첫 번째 작업은 sNext_tcb에서 스택 포인터 값을 읽어오는 작업이다.
+
+이후 스택에 저장되어 있는 cpsr 값을 꺼내어 ARM 코어의 CPSR에 값을 쓴다. 그 다음 R0부터 R12까지의 범용 레지스터를 복구하고 그 다음 스택 값을 꺼내 PC에 저장한다.
+
+마지막 줄이 실행되는 순간 ARM 코어는 컨텍스트가 백업된 직후의 코드 위치로 PC를 옮기고 실행을 이어서 하게 된다.
+
+```c
+__attribute__ ((naked)) void Kernel_task_context_switching(void){
+  __asm__ ("B Save_context");
+  __asm__ ("B Restore_context");
+}
+```
+이 책의 저자는 위와 같이 코드를 작성하였다. 근데 이렇게 하면 단순히 Save_context와 Restore_context가 메모리 상 연속된 위치에 저장되기 때문에 Save_context와 Restore_context가 실행되는 것이고, 두 번째 B 명령어가 실행되는 건 아닌것 같다. (B Save_context를 하면 PC가 Save_context 시작 주소로 바뀌고 PC를 복구하지 않는다.)
+
+따라서 나는 Kernel_task_context_switching 함수 내부에 두 함수의 구현을 모두 집어넣는 방식으로 구현하였다.
+
+```c
+__attribute__ ((naked)) void Kernel_task_context_switching(void) {
+  // 1. Save context
+
+  // save current task context into the current task stack
+  __asm__ ("PUSH {lr}");
+  __asm__ ("PUSH {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  __asm__ ("MRS r0, cpsr");
+  __asm__ ("PUSH {r0}");
+  // save current task stack pointer into the current TCB
+  __asm__ ("LDR r0, =sCurrent_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("STMIA r0!, {sp}");
+
+  // 2. Restore context
+
+  // restore next task stack pointer from the next TCB
+  __asm__ ("LDR r0, =sNext_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("LDMIA r0!, {sp}");
+  // restore next task context from the next task stack
+  __asm__ ("POP {r0}");
+  __asm__ ("MSR cpsr, r0");
+  __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  __asm__ ("POP {pc}");
+}
+```
