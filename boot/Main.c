@@ -3,10 +3,13 @@
 #include "stdbool.h"
 #include "HalUart.h"
 #include "HalGic.h"
+#include "HalTimer.h"
 #include "Uart.h"
+#include "stdlib.h"
 
 static void Hw_init(void);
 static void Printf_test(void);
+static void Timer_test(void);
 
 void main(void) {
   Hw_init();
@@ -21,6 +24,9 @@ void main(void) {
 
   Printf_test();
 
+  Timer_test();
+
+  /*
   i = 100;
   while(i--) {
     uint8_t ch = Hal_uart_get_char();
@@ -31,11 +37,20 @@ void main(void) {
   Hal_interrupt_enable(UART_INTERRUPT0);
   while(true);
   Hal_interrupt_disable(UART_INTERRUPT0);
+  */
+}
+
+static void Timer_test(void) {
+  while(true) {
+    debug_printf("current_count: %u\n", Hal_timer_get_1ms_counter());
+    delay(1000);
+  }
 }
 
 static void Hw_init(void){
   Hal_interrupt_init();
   Hal_uart_init();
+  Hal_timer_init();
 }
 
 static void Printf_test(void) {
@@ -49,4 +64,6 @@ static void Printf_test(void) {
   debug_printf("%u = 5\n", i);
   debug_printf("dec=%u hex=%x\n", 0xff, 0xff);
   debug_printf("print zero %u\n", 0);
+
+  debug_printf("SYSCTRL0: %u\n", *((uint32_t*)0x10001000));
 }
