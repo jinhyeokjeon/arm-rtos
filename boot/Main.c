@@ -6,10 +6,30 @@
 #include "HalTimer.h"
 #include "Uart.h"
 #include "stdlib.h"
+#include "task.h"
 
 static void Hw_init(void);
 static void Printf_test(void);
 static void Timer_test(void);
+
+void User_task0(void);
+void User_task1(void);
+void User_task2(void);
+
+static void Kernel_init(void) {
+  uint32_t taskId;
+
+  Kernel_task_init();
+
+  void (*f[3])(void) = { User_task0, User_task1, User_task2 };
+
+  for(uint32_t idx = 0; idx < 3; ++idx) {
+    taskId = Kernel_task_create(f[idx]);
+    if(NOT_ENOUGH_TASK_NUM == taskId) {
+      debug_printf("Task%u creation fail\n", idx);
+    }
+  }
+}
 
 void main(void) {
   Hw_init();
@@ -24,27 +44,27 @@ void main(void) {
 
   Printf_test();
 
-  Timer_test();
+  // Timer_test();
 
-  /*
-  i = 100;
+  i = 10;
   while(i--) {
     uint8_t ch = Hal_uart_get_char();
     Hal_uart_put_char(ch);
   }
   Hal_uart_put_char('\n');
-
-  Hal_interrupt_enable(UART_INTERRUPT0);
-  while(true);
-  Hal_interrupt_disable(UART_INTERRUPT0);
-  */
 }
 
-static void Timer_test(void) {
-  while(true) {
-    debug_printf("current_count: %u\n", Hal_timer_get_1ms_counter());
-    delay(1000);
-  }
+void User_task0(void) {
+  debug_printf("User Task #0\n");
+  while(true);
+}
+void User_task1(void) {
+  debug_printf("User Task #1\n");
+  while(true);
+}
+void User_task2(void) {
+  debug_printf("User Task #2\n");
+  while(true);
 }
 
 static void Hw_init(void){
