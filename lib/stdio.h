@@ -2,6 +2,7 @@
 #define LIB_STDIO_H_
 
 #include "stdarg.h"
+#include "stdint.h"
 
 typedef enum utoa_t {
   utoa_dec = 10,

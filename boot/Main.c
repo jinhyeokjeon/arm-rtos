@@ -1,6 +1,9 @@
-#include "stdint.h"
-#include "HalUart.h"
 #include "stdio.h"
+#include "stdint.h"
+#include "stdbool.h"
+#include "HalUart.h"
+#include "HalGic.h"
+#include "Uart.h"
 
 static void Hw_init(void);
 static void Printf_test(void);
@@ -23,9 +26,15 @@ void main(void) {
     uint8_t ch = Hal_uart_get_char();
     Hal_uart_put_char(ch);
   }
+  Hal_uart_put_char('\n');
+
+  Hal_interrupt_enable(UART_INTERRUPT0);
+  while(true);
+  Hal_interrupt_disable(UART_INTERRUPT0);
 }
 
 static void Hw_init(void){
+  Hal_interrupt_init();
   Hal_uart_init();
 }
 
