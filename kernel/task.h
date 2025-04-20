@@ -25,8 +25,6 @@ void Kernel_task_init(void);
 uint32_t Kernel_task_create(KernelTaskFunc_t startFunc);
 void Kernel_task_scheduling(void);
 void Kernel_task_start(void);
-
-static KernelTcb_t* Scheduler_round_robin(void);
-static __attribute__ ((naked)) void Kernel_task_context_switching(void);
+uint32_t Kernel_task_get_current_task_id(void);
 
 #endif

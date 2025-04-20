@@ -11,6 +11,9 @@ static uint32_t sCurrent_tcb_index;
 static KernelTcb_t* sCurrent_tcb;
 static KernelTcb_t* sNext_tcb;
 
+static KernelTcb_t* Scheduler_round_robin(void);
+static __attribute__ ((naked)) void Kernel_task_context_switching(void);
+
 static uint32_t cpsr_cp;
 void Kernel_task_init(void) {
   sAllocated_tcb_index = 0;
@@ -60,6 +63,10 @@ void Kernel_task_start(void) {
   __asm__ ("MSR cpsr, r0");
   __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}"); // 쓰레기 값들로 채워짐
   __asm__ ("POP {pc}"); // 태스크 함수의 위치로 점프
+}
+
+uint32_t Kernel_task_get_current_task_id(void) {
+  return sCurrent_tcb_index;
 }
 
 static KernelTcb_t* Scheduler_round_robin(void) {

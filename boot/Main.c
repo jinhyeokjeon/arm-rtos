@@ -1,14 +1,16 @@
 #include "stdio.h"
 #include "stdint.h"
 #include "stdbool.h"
+#include "stdlib.h"
 #include "HalUart.h"
 #include "HalGic.h"
 #include "HalTimer.h"
 #include "Uart.h"
-#include "stdlib.h"
 #include "task.h"
 #include "Kernel.h"
 #include "Tasks.h"
+#include "msg.h"
+#include "synch.h"
 
 static void Hw_init(void);
 static void Kernel_init(void);
@@ -42,6 +44,9 @@ static void Hw_init(void){
 static void Kernel_init(void) {
   Kernel_task_init();
   Kernel_event_flag_init();
+  Kernel_msgQ_init();
+  Kernel_sem_init(1);
+  Kernel_mutex_init();
   add_task(User_task0, 0);
   add_task(User_task1, 1);
   add_task(User_task2, 2);
