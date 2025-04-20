@@ -1911,8 +1911,14 @@ KernelTcb_t에는 스택 관련 정보를 저장하고 있다. sp는 스택 포�
 static KernelTcb_t sTask_list[MAX_TASK_NUM];
 static uint32_t sAllocated_tcb_index;
 
+static uint32_t cpsr_cp;
 void Kernel_task_init(void) {
   sAllocated_tcb_index = 0;
+  sCurrent_tcb_index = 0;
+
+  __asm__ ("MRS r0, cpsr");
+  __asm__ ("LDR r1, =cpsr_cp");
+  __asm__ ("STR r0, [r1]");
 
   for (uint32_t i = 0; i < MAX_TASK_NUM; ++i) {
     sTask_list[i].stack_base = (uint8_t*)(TASK_STACK_START + (i * USR_TASK_STACK_SIZE));
@@ -1920,8 +1926,8 @@ void Kernel_task_init(void) {
 
     sTask_list[i].sp -= sizeof(KernelTaskContext_t);
     KernelTaskContext_t* ctx = (KernelTaskContext_t*)sTask_list[i].sp;
-    ctx->pc = 0;
-    ctx->spsr = ARM_MODE_BIT_SYS;
+    // ctx->spsr = ARM_MODE_BIT_SYS;
+    ctx->spsr = cpsr_cp;
   }
 }
 ```
@@ -1935,6 +1941,8 @@ Kernel_task_init() 함수에서는 sTask_list 배열을 초기화한다.
 각 태스크마다 stack_base 주소를 할당하고, 스택 포인터 값을 계산한다. 스택은 주소가 작아지는 방향으로 자라나므로, 스택 포인터는 stack_base + USR_TASK_STACK_SIZE가 된다. 이 책에서는 스택 사이의 간격을 표시하기 위해 4바이트를 빼주었다.
 
 이 책에서의 RTOS는 컨텍스트를 해당 태스크의 **스택**에 저장한다. 태스크의 컨텍스트를 어디에 저장하느냐는 개발자가 설계를 어떻게 하느냐에 따라 달라지는 문제이지 정답은 없다.
+
+이 책에서는 단순히 ctx->spsr 값을 ARM_MODE_BIT_SYS 로 초기화하는데, 이렇게 하지 않고 현재 cpsr 값을 cpsr_cp 에 복사하고, 이 값을 ctx->spsr 값에 저장해주었다.
 
 ![alt text](./images/image_12.jpg)
 
@@ -2187,3 +2195,292 @@ __attribute__ ((naked)) void Kernel_task_context_switching(void) {
   __asm__ ("POP {pc}");
 }
 ```
+
+### 10.3 yield 만들기
+
+스케줄러와 컨텍스트 스위칭을 합쳐서 **스케줄링**이라고 한다. 그렇다면 언제 스케줄링할 것인지를 결정해야 한다.
+
+만약 정기적으로 발생하는 타이머 인터럽트에 연동해서 스케줄링을 하고 각 태스크가 일정한 시간만 동작하고 다음 태스크로 전환되는 시스템이라면 이 시스템의 운영체제를 **시분할 시스템** 이라고 한다.
+
+태스크가 명시적으로 스케줄링을 요청하지 않았는데 커널이 강제로 스케줄링을 하는 시스템을 **선점형 멀티태스킹 시스템** 이라고 한다.
+
+반대로 태스크가 명시적으로 스케줄링을 요청하지 않으면 커널이 스케줄링하지 않는 시스템을 **비선점형 멀티태스킹 시스템** 이라고 한다.
+
+일반적으로 시분할 시스템은 거의 선점형 멀티태스킹 시스템이다. RTOS를 시분할로 할지 하지 않을지, 그리고 선점형으로 할지 비선점형으로 할지 하는 결정은 RTOS가 동작할 임베디드 시스템의 요구사항에 따라 달라진다.
+
+이 책에서는 시분할이 아닌 시스템에 비선점형 스케줄링을 사용한다. 이 말은 스케줄링을 하려면 태스크가 명시적으로 커널에 스케줄링을 요청해야 한다는 말이다. 태스크가 커널에 스케줄링을 요청하는 동작은 태스크가 CPU 자원을 다음 태스크에 양보한다는 의미로 해석할 수 있다. 그래서 일반적으로 이런 동작을 하는 함수의 이름은 양보한다는 의미로 yield를 많이 쓴다.
+
+kernel/Kernel.h 와 kernel/Kernel.c 에 yield 함수를 만들도록 하겠다.
+
+```c
+#ifndef KERNEL_KERNEL_H_
+#define KERNEL_KERNEL_H_
+
+#include "task.h"
+
+void Kernel_yield(void);
+
+#endif
+
+#include "stdint.h"
+#include "stdbool.h"
+
+#include "Kernel.h"
+
+void Kernel_yield(void) {
+  Kernel_task_scheduler(); // lr은 이 다음 리턴 코드의 위치를 가리킬 것.
+}
+```
+
+구현은 매우 간단하다. Kernel_task_scheduler() 함수를 직접 호출하는 것이 전부이다. 태스크가 더 이상 할 일이 없을 때 Kernel_yield() 함수를 호출하면 즉시 스케줄러를 호출해서 다음에 동작할 태스크를 선정한다. 그리고 컨텍스트 스위칭을 수행한다.
+
+Kernel_yield()를 호출한 태스크의 컨텍스트를 스택에 백업하고 스케줄러가 선정해 준 태스크의 스택 포인터를 복구한다. 그리고 스택 포인터로부터 컨텍스트를 복구한다.
+
+그러면 다음에 동작할 코드의 위치는 태스크의 Kernel_yield()의 리턴 코드 직전이다. 즉 스케줄링 직후로 돌아와서 다음 태스크가 CPU를 사용하는 것이다.
+
+### 10.4 커널 시작하기
+
+스케줄러도 있고 컨텍스트 스위칭도 만들었기 때문에 커널을 시작해서 태스크 세 개를 동작시킬 수 있다. 방법은 매우 간단하다. 그냥 스케줄러를 실행하면 된다.
+
+다만 처음 커널을 시작할 때는 주의해주어야 한다. 커널을 시작할 때에는 시작하는 태스크의 스택에 컨텍스트가 존재한다. 또한 이 스택에는 태스크를 추상화한 함수의 주소가 존재한다. 
+
+따라서 맨 처음 태스크를 시작할 때는 스택에서 컨텍스트를 빼내어 저장하도록 하고 그 이후부터는 앞에서 만들었던 스케줄링 함수를 호출하면 된다.
+
+최초 스케줄링을 처리하는 함수인 Kernel_task_start() 함수를 task.c 에 생성한다.
+
+```c
+void Kernel_task_start(void) {
+  sNext_tcb = &sTask_list[sCurrent_tcb_index];
+
+  // restore next task stack pointer from the next TCB
+  __asm__ ("LDR r0, =sNext_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("LDMIA r0!, {sp}");
+  // restore next task context from the next task stack
+  __asm__ ("POP {r0}");
+  __asm__ ("MSR cpsr, r0");
+  __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}"); // 쓰레기 값들로 채워짐
+  __asm__ ("POP {pc}");
+}
+```
+
+맨 처음에 시작하는 태스크는 위와 같이 스택에서 컨텍스트 값을 빼내기만 한다.
+
+아래는 task.h와 task.c 완성본이다.
+
+```c
+#ifndef KERNEL_TASK_H_
+#define KERNEL_TASK_H_
+
+#include "MemoryMap.h"
+#include "stdint.h"
+
+#define NOT_ENOUGH_TASK_NUM 0xFFFFFFFF
+#define USR_TASK_STACK_SIZE 0x100000
+#define MAX_TASK_NUM (TASK_STACK_SIZE / USR_TASK_STACK_SIZE)
+
+typedef struct KernelTaskContext_t {
+  uint32_t spsr;
+  uint32_t r0_r12[13];
+  uint32_t pc;
+} KernelTaskContext_t;
+
+typedef struct KernelTcb_t {
+  uint32_t sp;
+  uint8_t* stack_base;
+} KernelTcb_t;
+
+typedef void (*KernelTaskFunc_t)(void);
+
+void Kernel_task_init(void);
+uint32_t Kernel_task_create(KernelTaskFunc_t startFunc);
+void Kernel_task_scheduling(void);
+void Kernel_task_start(void);
+
+static KernelTcb_t* Scheduler_round_robin(void);
+static __attribute__ ((naked)) void Kernel_task_context_switching(void);
+
+#endif
+```
+
+```c
+#include "stdint.h"
+#include "stdbool.h"
+
+#include "ARMv7AR.h"
+#include "task.h"
+
+static KernelTcb_t sTask_list[MAX_TASK_NUM];
+static uint32_t sAllocated_tcb_index;
+
+static uint32_t sCurrent_tcb_index;
+static KernelTcb_t* sCurrent_tcb;
+static KernelTcb_t* sNext_tcb;
+
+static uint32_t cpsr_cp;
+void Kernel_task_init(void) {
+  sAllocated_tcb_index = 0;
+  sCurrent_tcb_index = 0;
+
+  __asm__ ("MRS r0, cpsr");
+  __asm__ ("LDR r1, =cpsr_cp");
+  __asm__ ("STR r0, [r1]");
+
+  for (uint32_t i = 0; i < MAX_TASK_NUM; ++i) {
+    sTask_list[i].stack_base = (uint8_t*)(TASK_STACK_START + (i * USR_TASK_STACK_SIZE));
+    sTask_list[i].sp = (uint32_t)sTask_list[i].stack_base + USR_TASK_STACK_SIZE - 4;
+
+    sTask_list[i].sp -= sizeof(KernelTaskContext_t);
+    KernelTaskContext_t* ctx = (KernelTaskContext_t*)sTask_list[i].sp;
+    ctx->spsr = cpsr_cp;
+  }
+}
+
+uint32_t Kernel_task_create(KernelTaskFunc_t startFunc) {
+  KernelTcb_t* new_tcb = &sTask_list[sAllocated_tcb_index++];
+
+  if (sAllocated_tcb_index > MAX_TASK_NUM) {
+    return NOT_ENOUGH_TASK_NUM;
+  }
+
+  KernelTaskContext_t* ctx = (KernelTaskContext_t*)new_tcb->sp;
+  ctx->pc = (uint32_t)startFunc;
+
+  return (sAllocated_tcb_index - 1);
+}
+
+void Kernel_task_scheduling(void) {
+  sCurrent_tcb = &sTask_list[sCurrent_tcb_index];
+  sNext_tcb = Scheduler_round_robin();
+
+  Kernel_task_context_switching();
+}
+
+void Kernel_task_start(void) {
+  sNext_tcb = &sTask_list[sCurrent_tcb_index];
+  __asm__ ("LDR r0, =sNext_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("LDMIA r0!, {sp}");
+
+  __asm__ ("POP {r0}");
+  __asm__ ("MSR cpsr, r0");
+  __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}"); // 쓰레기 값들로 채워짐
+  __asm__ ("POP {pc}"); // 태스크 함수의 위치로 점프
+}
+
+static KernelTcb_t* Scheduler_round_robin(void) {
+  ++sCurrent_tcb_index;
+  sCurrent_tcb_index %= sAllocated_tcb_index;
+
+  return &sTask_list[sCurrent_tcb_index];
+}
+
+static __attribute__ ((naked)) void Kernel_task_context_switching(void) {
+  // 1. Save context
+
+  // save current task context into the current task stack
+  __asm__ ("PUSH {lr}");
+  __asm__ ("PUSH {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  __asm__ ("MRS r0, cpsr");
+  __asm__ ("PUSH {r0}");
+  // save current task stack pointer into the current TCB
+  __asm__ ("LDR r0, =sCurrent_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("STMIA r0!, {sp}");
+
+  // 2. Restore context
+
+  // restore next task stack pointer from the next TCB
+  __asm__ ("LDR r0, =sNext_tcb");
+  __asm__ ("LDR r0, [r0]");
+  __asm__ ("LDMIA r0!, {sp}");
+  // restore next task context from the next task stack
+  __asm__ ("POP {r0}");
+  __asm__ ("MSR cpsr, r0");
+  __asm__ ("POP {r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12}");
+  __asm__ ("POP {pc}");
+}
+```
+
+다음은 Main.c 이다.
+
+```c
+void main(void) {
+  Hw_init();
+
+  uint32_t i = 100;
+  while(i--) {
+    Hal_uart_put_char('N');
+  }
+  Hal_uart_put_char('\n');
+
+  putstr("Hello World!\n");
+
+  Printf_test();
+
+  Kernel_init();
+  Kernel_start();
+}
+
+static void Kernel_init(void) {
+  uint32_t taskId;
+
+  Kernel_task_init();
+
+  taskId = Kernel_task_create(User_task0);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
+  }
+
+  taskId = Kernel_task_create(User_task1);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
+  }
+
+  taskId = Kernel_task_create(User_task2);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
+  }
+}
+
+void User_task0(void) {
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #0 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
+}
+void User_task1(void) {
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #1 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
+}
+void User_task2(void) {
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #2 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
+}
+```
+
+![alt text](./images/image_14.png)
+
+모든 태스크의 스택 공간은 1MB 씩이다.
+
+TASK_STACK_START 는 0x00800000 이다.
+
+따라서 태스크 컨트롤 블록 초기화 후 할당된 Task0의 스택 포인터의 초기값은 0x00800000 + 1M - 4(padding) = 0x008FFFFC가 될 것이다.
+
+여기서 컴파일러가 사용하는 스택이 몇 개 되고, 그 다음에 로컬 변수가 스택에 잡히므로 스택 메모리 주소가 0x8FFFF0 으로 출력된 것이다.
+
+마찬가지 원리로 Task1과 Task2의 스택도 잘 출력되었다.
+
+### 10.5 요약
+
+이 장에서는 컨텍스트 스위칭을 만들었다. 일반적으로 쉽게 이해할 수 있는 함수의 호출-리턴 관계가 아니라 강제로 컨텍스트를 백업-리스토어 하는 과정이라 어렵다. 이제 여러 태스크가 동시에 동작하는 것처럼 보인다. 그렇다면 이 태스크간에 정보 교환을 할 수 있어야 한다. 다음 장에서는 이벤트를 구현해서 태스크 간에 간단한 신호를 주고받는다.

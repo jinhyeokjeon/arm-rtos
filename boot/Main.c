@@ -7,6 +7,7 @@
 #include "Uart.h"
 #include "stdlib.h"
 #include "task.h"
+#include "Kernel.h"
 
 static void Hw_init(void);
 static void Printf_test(void);
@@ -16,20 +17,7 @@ void User_task0(void);
 void User_task1(void);
 void User_task2(void);
 
-static void Kernel_init(void) {
-  uint32_t taskId;
-
-  Kernel_task_init();
-
-  void (*f[3])(void) = { User_task0, User_task1, User_task2 };
-
-  for(uint32_t idx = 0; idx < 3; ++idx) {
-    taskId = Kernel_task_create(f[idx]);
-    if(NOT_ENOUGH_TASK_NUM == taskId) {
-      debug_printf("Task%u creation fail\n", idx);
-    }
-  }
-}
+static void Kernel_init(void);
 
 void main(void) {
   Hw_init();
@@ -44,27 +32,54 @@ void main(void) {
 
   Printf_test();
 
-  // Timer_test();
+  Kernel_init();
+  Kernel_start();
+}
 
-  i = 10;
-  while(i--) {
-    uint8_t ch = Hal_uart_get_char();
-    Hal_uart_put_char(ch);
+static void Kernel_init(void) {
+  uint32_t taskId;
+
+  Kernel_task_init();
+
+  taskId = Kernel_task_create(User_task0);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
   }
-  Hal_uart_put_char('\n');
+
+  taskId = Kernel_task_create(User_task1);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
+  }
+
+  taskId = Kernel_task_create(User_task2);
+  if (taskId == NOT_ENOUGH_TASK_NUM) {
+    putstr("Task0 creation fail\n");
+  }
 }
 
 void User_task0(void) {
-  // debug_printf("User Task #0\n");
-  while(true);
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #0 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
 }
 void User_task1(void) {
-  debug_printf("User Task #1\n");
-  while(true);
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #1 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
 }
 void User_task2(void) {
-  debug_printf("User Task #2\n");
-  while(true);
+  uint32_t local = 0;
+  while(true) {
+    debug_printf("User Task #2 SP=0x%x\n", &local);
+    delay(1000);
+    Kernel_yield();
+  }
 }
 
 static void Hw_init(void){

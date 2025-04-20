@@ -2,6 +2,7 @@
 #define KERNEL_TASK_H_
 
 #include "MemoryMap.h"
+#include "stdint.h"
 
 #define NOT_ENOUGH_TASK_NUM 0xFFFFFFFF
 #define USR_TASK_STACK_SIZE 0x100000
@@ -22,6 +23,10 @@ typedef void (*KernelTaskFunc_t)(void);
 
 void Kernel_task_init(void);
 uint32_t Kernel_task_create(KernelTaskFunc_t startFunc);
-void Kernel_task_scheduler(void);
+void Kernel_task_scheduling(void);
+void Kernel_task_start(void);
+
+static KernelTcb_t* Scheduler_round_robin(void);
+static __attribute__ ((naked)) void Kernel_task_context_switching(void);
 
 #endif
