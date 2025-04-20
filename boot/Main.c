@@ -8,19 +8,16 @@
 #include "stdlib.h"
 #include "task.h"
 #include "Kernel.h"
+#include "Tasks.h"
 
 static void Hw_init(void);
+static void Kernel_init(void);
 static void Printf_test(void);
 static void Timer_test(void);
 
-void User_task0(void);
-void User_task1(void);
-void User_task2(void);
-
-static void Kernel_init(void);
-
 void main(void) {
   Hw_init();
+  Kernel_init();
 
   uint32_t i = 100;
   while(i--) {
@@ -32,60 +29,22 @@ void main(void) {
 
   Printf_test();
 
-  Kernel_init();
+  Hal_interrupt_enable(UART_INTERRUPT0);
   Kernel_start();
-}
-
-static void Kernel_init(void) {
-  uint32_t taskId;
-
-  Kernel_task_init();
-
-  taskId = Kernel_task_create(User_task0);
-  if (taskId == NOT_ENOUGH_TASK_NUM) {
-    putstr("Task0 creation fail\n");
-  }
-
-  taskId = Kernel_task_create(User_task1);
-  if (taskId == NOT_ENOUGH_TASK_NUM) {
-    putstr("Task0 creation fail\n");
-  }
-
-  taskId = Kernel_task_create(User_task2);
-  if (taskId == NOT_ENOUGH_TASK_NUM) {
-    putstr("Task0 creation fail\n");
-  }
-}
-
-void User_task0(void) {
-  uint32_t local = 0;
-  while(true) {
-    debug_printf("User Task #0 SP=0x%x\n", &local);
-    delay(1000);
-    Kernel_yield();
-  }
-}
-void User_task1(void) {
-  uint32_t local = 0;
-  while(true) {
-    debug_printf("User Task #1 SP=0x%x\n", &local);
-    delay(1000);
-    Kernel_yield();
-  }
-}
-void User_task2(void) {
-  uint32_t local = 0;
-  while(true) {
-    debug_printf("User Task #2 SP=0x%x\n", &local);
-    delay(1000);
-    Kernel_yield();
-  }
 }
 
 static void Hw_init(void){
   Hal_interrupt_init();
   Hal_uart_init();
   Hal_timer_init();
+}
+
+static void Kernel_init(void) {
+  Kernel_task_init();
+  Kernel_event_flag_init();
+  add_task(User_task0, 0);
+  add_task(User_task1, 1);
+  add_task(User_task2, 2);
 }
 
 static void Printf_test(void) {
