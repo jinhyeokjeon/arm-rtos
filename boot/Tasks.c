@@ -18,14 +18,40 @@ void User_task0(void) {
   uint32_t local = 0;
   debug_printf("User Task #0 SP=0x%x\n", &local);
 
+  uint8_t cmdBuf[16];
+  uint8_t cmdBufIdx = 0;
+  uint8_t uartch = 0;
+
   while(true) {
-    KernelEventFlag_t handle_event = Kernel_wait_events(KernelEventFlag_UartIn | KernelEventFlag_CmdOut);
+    KernelEventFlag_t handle_event = Kernel_wait_events(KernelEventFlag_UartIn);
     switch(handle_event) {
     case KernelEventFlag_UartIn:
-      debug_printf("\nEvent handled by Task0\n");
-      break;
-    case KernelEventFlag_CmdOut:
-      debug_printf("\nCmdOut Event by Task0\n");
+      Kernel_recv_msg(KernelMsgQ_Task0, &uartch, 1);
+
+      if (uartch == '\r') {
+        cmdBuf[cmdBufIdx] = '\0';
+        
+        while(true) {
+          if(!Kernel_send_msg(KernelMsgQ_Task1, &cmdBufIdx, 1)) {
+            Kernel_yield();
+          }
+          else if(!Kernel_send_msg(KernelMsgQ_Task1, cmdBuf, cmdBufIdx)) {
+            uint8_t rollback;
+            Kernel_recv_msg(KernelMsgQ_Task1, &rollback, 1);
+            Kernel_yield();
+          }
+          else {
+            break;
+          }
+        }
+
+        Kernel_send_events(KernelEventFlag_CmdIn);
+        cmdBufIdx = 0;
+      }
+      else {
+        cmdBuf[cmdBufIdx] = uartch;
+        cmdBufIdx = (cmdBufIdx + 1) % 16;
+      }
       break;
     }
     Kernel_yield();
@@ -34,11 +60,18 @@ void User_task0(void) {
 void User_task1(void) {
   uint32_t local = 0;
   debug_printf("User Task #1 SP=0x%x\n", &local);
+
+  uint8_t cmdlen = 0;
+  uint8_t cmd[16] = {0, };
+
   while(true) {
     KernelEventFlag_t handle_event = Kernel_wait_events(KernelEventFlag_CmdIn);
     switch(handle_event) {
     case KernelEventFlag_CmdIn:
-      debug_printf("\nEvent handled by Task1\n");
+      Kernel_recv_msg(KernelMsgQ_Task1, &cmdlen, 1);
+      Kernel_recv_msg(KernelMsgQ_Task1, cmd, cmdlen);
+      cmd[cmdlen] = 0;
+      debug_printf("\nRecv Cmd: %s\n", cmd);
       break;
     }
     Kernel_yield();
